@@ -1,0 +1,4 @@
+env:
+  DATABASE_URL: ${DATABASE_URL}
+migrations:
+  dir: migrations

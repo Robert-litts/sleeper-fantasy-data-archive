@@ -1,0 +1,32 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Build outputs
+/bin/
+/dist/
+/tmp/
+/sleeper-archive
+*.test
+*.out
+
+# Local Postgres bind mount
+/postgres/data/
+
+# Logs and runtime artifacts
+*.log
+*.pid
+*.prof
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local coverage output
+coverage.out
+coverage.html

@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: sleeper-postgres
+    environment:
+      POSTGRES_USER: sleeper
+      POSTGRES_PASSWORD: sleeper
+      POSTGRES_DB: sleeper_archive
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer:latest
+    container_name: sleeper-adminer
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    ports:
+      - "8081:8080"
+
+  archive:
+    build: .
+    container_name: sleeper-archive
+    depends_on:
+      - postgres
+    env_file:
+      - path: .env
+        required: false
+    command: ["/sleeper-archive", "-mode", "inspect"]
