@@ -18,10 +18,10 @@ The long-term goal is for my fantasy football web app to read from both:
 - Player archive
 - League archive
 - Team and current-roster archive
+- Draft archive
 - Weekly matchup archive
 - Playoff bracket archive
 - Optional restore script for a local ESPN clone database
-- Draft archive
 - Historical lineup/roster snapshots by week
 - Web app integration across ESPN and Sleeper databases
 
@@ -144,9 +144,11 @@ Available modes:
 | `players` | Fetches `/players/nfl` and upserts player records. Stores Sleeper IDs and optional ESPN ID cross-references. |
 | `leagues` | Fetches leagues for each configured season and upserts league records. |
 | `teams` | Fetches league users and rosters, upserts team records, and stores current roster entries at `week = 0`. |
+| `drafts` | Fetches league drafts and draft picks, resolves picks to archived teams and players, and stores draft history. |
 | `matchups` | Fetches weekly matchup entries until Sleeper returns the first empty week, stores scores, starters, players, and paired opponent roster IDs. |
+| `weekly-rosters` | Fetches weekly matchup entries and normalizes each roster's players/starters into `rosters` rows for each week. |
 | `brackets` | Fetches winners and losers playoff brackets, stores bracket progression metadata, and updates `teams.final_standing` from completed winners-bracket placement games. |
-| `backfill-basic` | Runs players, leagues, teams, current rosters, matchups, and playoff bracket archiving in sequence. |
+| `backfill-basic` | Runs players, leagues, teams, current rosters, drafts, matchups, weekly rosters, and playoff bracket archiving in sequence. |
 | `state` | Fetches Sleeper NFL state metadata. Useful for API/debug checks. |
 
 Example:
@@ -209,11 +211,13 @@ ESPN_DATABASE_URL=postgres://sleeper:sleeper@localhost:5434/fantasy_espn_clone?s
 - `players.sleeper_id` is the authoritative Sleeper player ID.
 - `players.espn_id` is an optional indexed cross-reference.
 - The table names mirror the ESPN archive where practical: `leagues`, `teams`, `players`, `drafts`, `matchups`, and `rosters`.
+- `drafts` stores individual draft picks and links each pick to the archived `teams` and `players` records.
+- `rosters.week = 0` stores the current roster snapshot from Sleeper's roster endpoint.
+- `rosters.week >= 1` stores historical weekly lineup snapshots derived from matchup `players` and `starters`.
 - `teams.standing` is regular-season standing.
 - `teams.final_standing` starts as regular-season standing, then `brackets` updates it when Sleeper exposes completed winners-bracket placement games.
 - `playoff_bracket_matchups` stores Sleeper winners and losers bracket metadata separately from weekly matchup scores. Losers-bracket placement values are archived but not used as overall league final standings.
 - In `playoff_bracket_matchups`, `slot1_*` and `slot2_*` represent the two bracket positions in a playoff matchup. A slot can point directly to a roster with `slot1_roster_id`, or it can point to the winner/loser of an earlier bracket matchup with `slot1_source_matchup_id` and `slot1_source_result`.
-- Current roster entries are stored with `week = 0` until weekly snapshots are implemented.
 
 ### Playoff Bracket Example
 

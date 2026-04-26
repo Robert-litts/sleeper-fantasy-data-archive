@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "inspect", "Mode to run: inspect, players, leagues, teams, matchups, brackets, backfill-basic, state")
+	mode := flag.String("mode", "inspect", "Mode to run: inspect, players, leagues, teams, drafts, matchups, weekly-rosters, brackets, backfill-basic, state")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -65,12 +65,24 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Printf("archived %d teams and %d roster entries\n", teamCount, rosterEntryCount)
+	case "drafts":
+		count, err := svc.ArchiveDrafts(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("archived %d draft picks\n", count)
 	case "matchups":
 		count, err := svc.ArchiveMatchups(ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Printf("archived %d matchup entries\n", count)
+	case "weekly-rosters":
+		count, err := svc.ArchiveWeeklyRosters(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("archived %d weekly roster entries\n", count)
 	case "brackets":
 		count, err := svc.ArchivePlayoffBrackets(ctx)
 		if err != nil {
@@ -78,11 +90,11 @@ func main() {
 		}
 		fmt.Printf("archived %d playoff bracket matchups\n", count)
 	case "backfill-basic":
-		playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, bracketCount, err := svc.ArchiveBasic(ctx)
+		playerCount, leagueCount, teamCount, rosterEntryCount, draftCount, matchupCount, weeklyRosterCount, bracketCount, err := svc.ArchiveBasic(ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("archived %d players, %d leagues, %d teams, %d roster entries, %d matchup entries, and %d playoff bracket matchups\n", playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, bracketCount)
+		fmt.Printf("archived %d players, %d leagues, %d teams, %d roster entries, %d draft picks, %d matchup entries, %d weekly roster entries, and %d playoff bracket matchups\n", playerCount, leagueCount, teamCount, rosterEntryCount, draftCount, matchupCount, weeklyRosterCount, bracketCount)
 	case "state":
 		state, err := client.GetState(ctx, cfg.SleeperSport)
 		if err != nil {

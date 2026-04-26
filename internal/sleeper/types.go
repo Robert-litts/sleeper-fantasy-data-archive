@@ -159,8 +159,8 @@ type Draft struct {
 
 type DraftPick struct {
 	PlayerID  string            `json:"player_id"`
-	PickedBy  string            `json:"picked_by"`
-	RosterID  string            `json:"roster_id"`
+	PickedBy  FlexibleString    `json:"picked_by"`
+	RosterID  FlexibleString    `json:"roster_id"`
 	Round     int               `json:"round"`
 	DraftSlot int               `json:"draft_slot"`
 	PickNo    int               `json:"pick_no"`

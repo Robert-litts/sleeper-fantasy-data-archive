@@ -284,33 +284,159 @@ func (s *Service) ArchivePlayoffBrackets(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-func (s *Service) ArchiveBasic(ctx context.Context) (int, int, int, int, int, int, error) {
+func (s *Service) ArchiveDrafts(ctx context.Context) (int, error) {
+	if s.queries == nil {
+		return 0, fmt.Errorf("database queries are not configured")
+	}
+
+	plans, err := s.BuildBackfillPlan(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, plan := range plans {
+		for _, league := range plan.Leagues {
+			if league.LeagueID == "" {
+				continue
+			}
+
+			dbLeague, err := s.queries.UpsertLeague(ctx, upsertLeagueParams(league, plan.Season))
+			if err != nil {
+				return count, fmt.Errorf("upsert league %s: %w", league.LeagueID, err)
+			}
+
+			if _, _, err := s.archiveTeamsForLeague(ctx, dbLeague.ID, league.LeagueID); err != nil {
+				return count, fmt.Errorf("archive teams league %s: %w", league.LeagueID, err)
+			}
+
+			drafts, err := s.client.GetLeagueDrafts(ctx, league.LeagueID)
+			if err != nil {
+				return count, fmt.Errorf("fetch drafts league %s: %w", league.LeagueID, err)
+			}
+
+			for _, draft := range drafts {
+				if draft.DraftID == "" {
+					continue
+				}
+
+				picks, err := s.client.GetDraftPicks(ctx, draft.DraftID)
+				if err != nil {
+					return count, fmt.Errorf("fetch draft picks draft %s: %w", draft.DraftID, err)
+				}
+
+				for _, pick := range picks {
+					if pick.PickNo == 0 || pick.PlayerID == "" {
+						continue
+					}
+
+					params, err := s.upsertDraftPickParams(ctx, dbLeague.ID, league.TotalRosters, draft.DraftID, pick)
+					if err != nil {
+						return count, fmt.Errorf("map draft pick draft %s pick %d: %w", draft.DraftID, pick.PickNo, err)
+					}
+
+					if _, err := s.queries.UpsertDraftPick(ctx, params); err != nil {
+						return count, fmt.Errorf("upsert draft pick draft %s pick %d: %w", draft.DraftID, pick.PickNo, err)
+					}
+					count++
+				}
+			}
+		}
+	}
+
+	return count, nil
+}
+
+func (s *Service) ArchiveWeeklyRosters(ctx context.Context) (int, error) {
+	if s.queries == nil {
+		return 0, fmt.Errorf("database queries are not configured")
+	}
+
+	plans, err := s.BuildBackfillPlan(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, plan := range plans {
+		for _, league := range plan.Leagues {
+			if league.LeagueID == "" {
+				continue
+			}
+
+			dbLeague, err := s.queries.UpsertLeague(ctx, upsertLeagueParams(league, plan.Season))
+			if err != nil {
+				return count, fmt.Errorf("upsert league %s: %w", league.LeagueID, err)
+			}
+
+			for week := 1; ; week++ {
+				if week > maxMatchupWeekProbeLimit {
+					return count, fmt.Errorf("stopped weekly roster probing for league %s after %d weeks without finding an empty response", league.LeagueID, maxMatchupWeekProbeLimit)
+				}
+
+				matchups, err := s.client.GetLeagueMatchups(ctx, league.LeagueID, week)
+				if err != nil {
+					return count, fmt.Errorf("fetch matchups league %s week %d: %w", league.LeagueID, week, err)
+				}
+				if len(matchups) == 0 {
+					break
+				}
+
+				for _, matchup := range matchups {
+					if matchup.RosterID == 0 {
+						continue
+					}
+
+					inserted, err := s.archiveWeeklyRosterEntries(ctx, dbLeague.ID, week, matchup)
+					if err != nil {
+						return count, fmt.Errorf("archive weekly roster league %s week %d roster %d: %w", league.LeagueID, week, matchup.RosterID, err)
+					}
+					count += inserted
+				}
+			}
+		}
+	}
+
+	return count, nil
+}
+
+func (s *Service) ArchiveBasic(ctx context.Context) (int, int, int, int, int, int, int, int, error) {
 	playerCount, err := s.ArchivePlayers(ctx)
 	if err != nil {
-		return 0, 0, 0, 0, 0, 0, err
+		return 0, 0, 0, 0, 0, 0, 0, 0, err
 	}
 
 	leagueCount, err := s.ArchiveLeagues(ctx)
 	if err != nil {
-		return playerCount, 0, 0, 0, 0, 0, err
+		return playerCount, 0, 0, 0, 0, 0, 0, 0, err
 	}
 
 	teamCount, rosterEntryCount, err := s.ArchiveTeamsAndRosters(ctx)
 	if err != nil {
-		return playerCount, leagueCount, teamCount, rosterEntryCount, 0, 0, err
+		return playerCount, leagueCount, teamCount, rosterEntryCount, 0, 0, 0, 0, err
+	}
+
+	draftCount, err := s.ArchiveDrafts(ctx)
+	if err != nil {
+		return playerCount, leagueCount, teamCount, rosterEntryCount, draftCount, 0, 0, 0, err
 	}
 
 	matchupCount, err := s.ArchiveMatchups(ctx)
 	if err != nil {
-		return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, 0, err
+		return playerCount, leagueCount, teamCount, rosterEntryCount, draftCount, matchupCount, 0, 0, err
+	}
+
+	weeklyRosterCount, err := s.ArchiveWeeklyRosters(ctx)
+	if err != nil {
+		return playerCount, leagueCount, teamCount, rosterEntryCount, draftCount, matchupCount, weeklyRosterCount, 0, err
 	}
 
 	bracketCount, err := s.ArchivePlayoffBrackets(ctx)
 	if err != nil {
-		return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, bracketCount, err
+		return playerCount, leagueCount, teamCount, rosterEntryCount, draftCount, matchupCount, weeklyRosterCount, bracketCount, err
 	}
 
-	return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, bracketCount, nil
+	return playerCount, leagueCount, teamCount, rosterEntryCount, draftCount, matchupCount, weeklyRosterCount, bracketCount, nil
 }
 
 type bracketFetcher func(context.Context, string) ([]sleeper.BracketMatchup, error)
@@ -395,15 +521,42 @@ func upsertTeamParams(leagueID int64, roster sleeper.Roster, user sleeper.User, 
 	}
 }
 
+func (s *Service) archiveTeamsForLeague(ctx context.Context, dbLeagueID int64, sleeperLeagueID string) (int, []sleeper.Roster, error) {
+	users, err := s.client.GetLeagueUsers(ctx, sleeperLeagueID)
+	if err != nil {
+		return 0, nil, fmt.Errorf("fetch users: %w", err)
+	}
+
+	rosters, err := s.client.GetLeagueRosters(ctx, sleeperLeagueID)
+	if err != nil {
+		return 0, nil, fmt.Errorf("fetch rosters: %w", err)
+	}
+
+	usersByID := mapUsersByID(users)
+	standings := rankRosters(rosters)
+	count := 0
+	for _, roster := range rosters {
+		user := usersByID[roster.OwnerID]
+		if _, err := s.queries.UpsertTeam(ctx, upsertTeamParams(dbLeagueID, roster, user, standings[roster.RosterID])); err != nil {
+			return count, rosters, fmt.Errorf("upsert team roster %d: %w", roster.RosterID, err)
+		}
+		count++
+	}
+
+	return count, rosters, nil
+}
+
 func (s *Service) archiveRosterEntries(ctx context.Context, leagueID int64, roster sleeper.Roster) (int, error) {
 	starters := make(map[string]bool, len(roster.Starters))
 	for _, sleeperPlayerID := range roster.Starters {
-		starters[sleeperPlayerID] = true
+		if validSleeperPlayerID(sleeperPlayerID) {
+			starters[sleeperPlayerID] = true
+		}
 	}
 
 	count := 0
 	for _, sleeperPlayerID := range roster.Players {
-		if sleeperPlayerID == "" {
+		if !validSleeperPlayerID(sleeperPlayerID) {
 			continue
 		}
 
@@ -434,6 +587,100 @@ func (s *Service) archiveRosterEntries(ctx context.Context, leagueID int64, rost
 	}
 
 	return count, nil
+}
+
+func (s *Service) archiveWeeklyRosterEntries(ctx context.Context, leagueID int64, week int, matchup sleeper.Matchup) (int, error) {
+	starters := make(map[string]bool, len(matchup.Starters))
+	for _, sleeperPlayerID := range matchup.Starters {
+		if validSleeperPlayerID(sleeperPlayerID) {
+			starters[sleeperPlayerID] = true
+		}
+	}
+
+	playerIDs := append([]string(nil), matchup.Players...)
+	for _, sleeperPlayerID := range matchup.Starters {
+		if !containsString(playerIDs, sleeperPlayerID) {
+			playerIDs = append(playerIDs, sleeperPlayerID)
+		}
+	}
+
+	count := 0
+	for _, sleeperPlayerID := range playerIDs {
+		if !validSleeperPlayerID(sleeperPlayerID) {
+			continue
+		}
+
+		player, err := s.queries.GetPlayerBySleeperID(ctx, sleeperPlayerID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return count, fmt.Errorf("player %s is not archived; run players first", sleeperPlayerID)
+			}
+			return count, err
+		}
+
+		slot := "bench"
+		if starters[sleeperPlayerID] {
+			slot = "starter"
+		}
+
+		if _, err := s.queries.UpsertRosterEntry(ctx, db.UpsertRosterEntryParams{
+			LeagueID:   leagueID,
+			Week:       int32(week),
+			RosterID:   int32(matchup.RosterID),
+			PlayerID:   player.ID,
+			RosterSlot: slot,
+			IsStarter:  starters[sleeperPlayerID],
+		}); err != nil {
+			return count, err
+		}
+		count++
+	}
+
+	return count, nil
+}
+
+func (s *Service) upsertDraftPickParams(ctx context.Context, leagueID int64, totalRosters int, draftID string, pick sleeper.DraftPick) (db.UpsertDraftPickParams, error) {
+	rosterID, err := strconv.Atoi(pick.RosterID.Value)
+	if err != nil || rosterID == 0 {
+		return db.UpsertDraftPickParams{}, fmt.Errorf("invalid roster id %q", pick.RosterID.Value)
+	}
+
+	team, err := s.queries.GetTeamByLeagueAndRoster(ctx, db.GetTeamByLeagueAndRosterParams{
+		LeagueID: leagueID,
+		RosterID: int32(rosterID),
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return db.UpsertDraftPickParams{}, fmt.Errorf("team roster %d is not archived; run teams first", rosterID)
+		}
+		return db.UpsertDraftPickParams{}, fmt.Errorf("find team roster %d: %w", rosterID, err)
+	}
+
+	player, err := s.queries.GetPlayerBySleeperID(ctx, pick.PlayerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return db.UpsertDraftPickParams{}, fmt.Errorf("player %s is not archived; run players first", pick.PlayerID)
+		}
+		return db.UpsertDraftPickParams{}, fmt.Errorf("find player %s: %w", pick.PlayerID, err)
+	}
+
+	roundPick := pick.PickNo
+	if totalRosters > 0 && pick.Round > 0 {
+		roundPick = pick.PickNo - ((pick.Round - 1) * totalRosters)
+	}
+
+	return db.UpsertDraftPickParams{
+		LeagueID:     leagueID,
+		DraftID:      draftID,
+		TeamID:       team.ID,
+		PlayerID:     player.ID,
+		OverallPick:  int32(pick.PickNo),
+		RoundNum:     int32(pick.Round),
+		RoundPick:    int32(roundPick),
+		DraftSlot:    nullIntValue(pick.DraftSlot),
+		PickedBy:     nullFlexibleString(pick.PickedBy),
+		KeeperStatus: boolValue(pick.IsKeeper),
+	}, nil
 }
 
 func (s *Service) archiveBracket(ctx context.Context, dbLeagueID int64, sleeperLeagueID, bracketType string, fetch bracketFetcher) (int, error) {
@@ -615,6 +862,19 @@ func bracketSourceResult(source sleeper.BracketSource) string {
 	return ""
 }
 
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func validSleeperPlayerID(value string) bool {
+	return value != "" && value != "0"
+}
+
 func nullString(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: value != ""}
 }
@@ -646,6 +906,10 @@ func nullFloat(value *float64) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: formatPoints(*value), Valid: true}
+}
+
+func boolValue(value *bool) bool {
+	return value != nil && *value
 }
 
 func valueOrDefault(value, fallback string) string {

@@ -10,6 +10,46 @@ import (
 	"database/sql"
 )
 
+const getTeamByLeagueAndRoster = `-- name: GetTeamByLeagueAndRoster :one
+SELECT id, league_id, roster_id, owner_id, user_id, display_name, username, team_name, avatar, wins, losses, ties, points_for, points_against, waiver_position, waiver_budget_used, total_moves, streak_type, streak_length, standing, final_standing FROM teams
+WHERE league_id = $1
+  AND roster_id = $2
+`
+
+type GetTeamByLeagueAndRosterParams struct {
+	LeagueID int64 `json:"league_id"`
+	RosterID int32 `json:"roster_id"`
+}
+
+func (q *Queries) GetTeamByLeagueAndRoster(ctx context.Context, arg GetTeamByLeagueAndRosterParams) (Team, error) {
+	row := q.db.QueryRowContext(ctx, getTeamByLeagueAndRoster, arg.LeagueID, arg.RosterID)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.LeagueID,
+		&i.RosterID,
+		&i.OwnerID,
+		&i.UserID,
+		&i.DisplayName,
+		&i.Username,
+		&i.TeamName,
+		&i.Avatar,
+		&i.Wins,
+		&i.Losses,
+		&i.Ties,
+		&i.PointsFor,
+		&i.PointsAgainst,
+		&i.WaiverPosition,
+		&i.WaiverBudgetUsed,
+		&i.TotalMoves,
+		&i.StreakType,
+		&i.StreakLength,
+		&i.Standing,
+		&i.FinalStanding,
+	)
+	return i, err
+}
+
 const listTeamsByLeague = `-- name: ListTeamsByLeague :many
 SELECT id, league_id, roster_id, owner_id, user_id, display_name, username, team_name, avatar, wins, losses, ties, points_for, points_against, waiver_position, waiver_budget_used, total_moves, streak_type, streak_length, standing, final_standing FROM teams
 WHERE league_id = $1
