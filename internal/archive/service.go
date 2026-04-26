@@ -19,6 +19,12 @@ type SeasonPlan struct {
 	Leagues []sleeper.League
 }
 
+type leagueSettings struct {
+	PlayoffWeekStart int `json:"playoff_week_start"`
+}
+
+const maxMatchupWeekProbeLimit = 30
+
 type Service struct {
 	cfg     config.Config
 	client  *sleeper.Client
@@ -163,23 +169,100 @@ func (s *Service) ArchiveTeamsAndRosters(ctx context.Context) (int, int, error) 
 	return teamCount, rosterEntryCount, nil
 }
 
-func (s *Service) ArchiveBasic(ctx context.Context) (int, int, int, int, error) {
+func (s *Service) ArchiveMatchups(ctx context.Context) (int, error) {
+	if s.queries == nil {
+		return 0, fmt.Errorf("database queries are not configured")
+	}
+
+	plans, err := s.BuildBackfillPlan(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, plan := range plans {
+		for _, league := range plan.Leagues {
+			if league.LeagueID == "" {
+				continue
+			}
+
+			dbLeague, err := s.queries.UpsertLeague(ctx, upsertLeagueParams(league, plan.Season))
+			if err != nil {
+				return count, fmt.Errorf("upsert league %s: %w", league.LeagueID, err)
+			}
+
+			settings := parseLeagueSettings(league.Settings)
+			for week := 1; ; week++ {
+				if week > maxMatchupWeekProbeLimit {
+					return count, fmt.Errorf("stopped matchup probing for league %s after %d weeks without finding an empty response", league.LeagueID, maxMatchupWeekProbeLimit)
+				}
+
+				matchups, err := s.client.GetLeagueMatchups(ctx, league.LeagueID, week)
+				if err != nil {
+					return count, fmt.Errorf("fetch matchups league %s week %d: %w", league.LeagueID, week, err)
+				}
+				if len(matchups) == 0 {
+					break
+				}
+
+				opponents := matchupOpponents(matchups)
+				for _, matchup := range matchups {
+					if matchup.RosterID == 0 {
+						continue
+					}
+
+					isPlayoff := settings.PlayoffWeekStart > 0 && week >= settings.PlayoffWeekStart
+					matchupType := "REGULAR"
+					if isPlayoff {
+						matchupType = "WINNERS_BRACKET"
+					}
+
+					if _, err := s.queries.UpsertMatchup(ctx, db.UpsertMatchupParams{
+						LeagueID:         dbLeague.ID,
+						Week:             int32(week),
+						MatchupID:        int32(normalizedMatchupID(matchup)),
+						RosterID:         int32(matchup.RosterID),
+						OpponentRosterID: nullIntValue(opponents[matchup.RosterID]),
+						Points:           formatPoints(matchup.Points),
+						CustomPoints:     nullFloat(matchup.CustomPoints),
+						IsPlayoff:        isPlayoff,
+						MatchupType:      matchupType,
+						Starters:         mustJSON(matchup.Starters, []byte("[]")),
+						Players:          mustJSON(matchup.Players, []byte("[]")),
+					}); err != nil {
+						return count, fmt.Errorf("upsert matchup league %s week %d roster %d: %w", league.LeagueID, week, matchup.RosterID, err)
+					}
+					count++
+				}
+			}
+		}
+	}
+
+	return count, nil
+}
+
+func (s *Service) ArchiveBasic(ctx context.Context) (int, int, int, int, int, error) {
 	playerCount, err := s.ArchivePlayers(ctx)
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, 0, 0, 0, err
 	}
 
 	leagueCount, err := s.ArchiveLeagues(ctx)
 	if err != nil {
-		return playerCount, 0, 0, 0, err
+		return playerCount, 0, 0, 0, 0, err
 	}
 
 	teamCount, rosterEntryCount, err := s.ArchiveTeamsAndRosters(ctx)
 	if err != nil {
-		return playerCount, leagueCount, teamCount, rosterEntryCount, err
+		return playerCount, leagueCount, teamCount, rosterEntryCount, 0, err
 	}
 
-	return playerCount, leagueCount, teamCount, rosterEntryCount, nil
+	matchupCount, err := s.ArchiveMatchups(ctx)
+	if err != nil {
+		return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, err
+	}
+
+	return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, nil
 }
 
 func upsertLeagueParams(league sleeper.League, fallbackSeason int) db.UpsertLeagueParams {
@@ -345,6 +428,45 @@ func formatPoints(points float64) string {
 	return strconv.FormatFloat(points, 'f', 2, 64)
 }
 
+func parseLeagueSettings(raw json.RawMessage) leagueSettings {
+	var settings leagueSettings
+	if len(raw) == 0 {
+		return settings
+	}
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		return leagueSettings{}
+	}
+	return settings
+}
+
+func matchupOpponents(matchups []sleeper.Matchup) map[int]int {
+	byMatchupID := make(map[int][]int)
+	for _, matchup := range matchups {
+		if matchup.RosterID == 0 {
+			continue
+		}
+		matchupID := normalizedMatchupID(matchup)
+		byMatchupID[matchupID] = append(byMatchupID[matchupID], matchup.RosterID)
+	}
+
+	opponents := make(map[int]int)
+	for _, rosterIDs := range byMatchupID {
+		if len(rosterIDs) != 2 {
+			continue
+		}
+		opponents[rosterIDs[0]] = rosterIDs[1]
+		opponents[rosterIDs[1]] = rosterIDs[0]
+	}
+	return opponents
+}
+
+func normalizedMatchupID(matchup sleeper.Matchup) int {
+	if matchup.MatchupID.Valid && matchup.MatchupID.Value != 0 {
+		return matchup.MatchupID.Value
+	}
+	return -matchup.RosterID
+}
+
 func nullString(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: value != ""}
 }
@@ -362,6 +484,20 @@ func nullInt(value *int) sql.NullInt32 {
 
 func nullFlexibleInt(value sleeper.FlexibleInt) sql.NullInt32 {
 	return sql.NullInt32{Int32: int32(value.Value), Valid: value.Valid}
+}
+
+func nullIntValue(value int) sql.NullInt32 {
+	if value == 0 {
+		return sql.NullInt32{}
+	}
+	return sql.NullInt32{Int32: int32(value), Valid: true}
+}
+
+func nullFloat(value *float64) sql.NullString {
+	if value == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: formatPoints(*value), Valid: true}
 }
 
 func valueOrDefault(value, fallback string) string {

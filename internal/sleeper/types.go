@@ -170,12 +170,12 @@ type DraftPick struct {
 }
 
 type Matchup struct {
-	Starters     []string `json:"starters"`
-	RosterID     int      `json:"roster_id"`
-	Players      []string `json:"players"`
-	MatchupID    int      `json:"matchup_id"`
-	Points       float64  `json:"points"`
-	CustomPoints *float64 `json:"custom_points"`
+	Starters     []string    `json:"starters"`
+	RosterID     int         `json:"roster_id"`
+	Players      []string    `json:"players"`
+	MatchupID    FlexibleInt `json:"matchup_id"`
+	Points       float64     `json:"points"`
+	CustomPoints *float64    `json:"custom_points"`
 }
 
 type Player struct {

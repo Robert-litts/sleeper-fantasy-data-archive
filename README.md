@@ -18,8 +18,8 @@ The long-term goal is for my fantasy football web app to read from both:
 - Player archive
 - League archive
 - Team and current-roster archive
-- Optional restore script for a local ESPN clone database
 - Weekly matchup archive
+- Optional restore script for a local ESPN clone database
 - Draft archive
 - Historical lineup/roster snapshots by week
 - Web app integration across ESPN and Sleeper databases
@@ -143,7 +143,8 @@ Available modes:
 | `players` | Fetches `/players/nfl` and upserts player records. Stores Sleeper IDs and optional ESPN ID cross-references. |
 | `leagues` | Fetches leagues for each configured season and upserts league records. |
 | `teams` | Fetches league users and rosters, upserts team records, and stores current roster entries at `week = 0`. |
-| `backfill-basic` | Runs players, leagues, teams, and current roster archiving in sequence. |
+| `matchups` | Fetches weekly matchup entries until Sleeper returns the first empty week, stores scores, starters, players, and paired opponent roster IDs. |
+| `backfill-basic` | Runs players, leagues, teams, current rosters, and matchup archiving in sequence. |
 | `state` | Fetches Sleeper NFL state metadata. Useful for API/debug checks. |
 
 Example:
