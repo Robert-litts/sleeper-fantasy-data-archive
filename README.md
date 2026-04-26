@@ -141,6 +141,7 @@ Available modes:
 | Mode | What it does |
 | --- | --- |
 | `inspect` | Lists Sleeper leagues found for `SLEEPER_USER_ID` from `START_SEASON` through `END_SEASON`. Does not write archive data. |
+| `report` | Prints archive health summaries by league, including teams, draft picks, matchup weeks, roster rows, playoff bracket rows, champion, runner-up, and warnings. |
 | `players` | Fetches `/players/nfl` and upserts player records. Stores Sleeper IDs and optional ESPN ID cross-references. |
 | `leagues` | Fetches leagues for each configured season and upserts league records. |
 | `teams` | Fetches league users and rosters, upserts team records, and stores current roster entries at `week = 0`. |

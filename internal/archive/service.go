@@ -60,6 +60,13 @@ func (s *Service) LoadPlayers(ctx context.Context) (int, error) {
 	return len(players), nil
 }
 
+func (s *Service) LeagueReports(ctx context.Context) ([]db.ListLeagueReportsRow, error) {
+	if s.queries == nil {
+		return nil, fmt.Errorf("database queries are not configured")
+	}
+	return s.queries.ListLeagueReports(ctx)
+}
+
 func (s *Service) ArchivePlayers(ctx context.Context) (int, error) {
 	if s.queries == nil {
 		return 0, fmt.Errorf("database queries are not configured")
