@@ -10,16 +10,17 @@ import (
 )
 
 type Config struct {
-	DatabaseURL    string
-	SleeperUserID  string
-	SleeperSport   string
-	SleeperBaseURL string
-	StartSeason    int
-	EndSeason      int
-	HTTPTimeout    time.Duration
-	DBMaxOpenConns int
-	DBMaxIdleConns int
-	DBMaxIdleTime  time.Duration
+	DatabaseURL         string
+	SleeperUserID       string
+	SleeperMainLeagueID string
+	SleeperSport        string
+	SleeperBaseURL      string
+	StartSeason         int
+	EndSeason           int
+	HTTPTimeout         time.Duration
+	DBMaxOpenConns      int
+	DBMaxIdleConns      int
+	DBMaxIdleTime       time.Duration
 }
 
 func Load() (Config, error) {
@@ -28,16 +29,17 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		DatabaseURL:    os.Getenv("DATABASE_URL"),
-		SleeperUserID:  os.Getenv("SLEEPER_USER_ID"),
-		SleeperSport:   getEnv("SLEEPER_SPORT", "nfl"),
-		SleeperBaseURL: getEnv("SLEEPER_API_BASE_URL", "https://api.sleeper.app/v1"),
-		StartSeason:    getEnvInt("START_SEASON", 2022),
-		EndSeason:      getEnvInt("END_SEASON", 2025),
-		HTTPTimeout:    getEnvDuration("HTTP_TIMEOUT", 30*time.Second),
-		DBMaxOpenConns: getEnvInt("DB_MAX_OPEN_CONNS", 25),
-		DBMaxIdleConns: getEnvInt("DB_MAX_IDLE_CONNS", 25),
-		DBMaxIdleTime:  getEnvDuration("DB_MAX_IDLE_TIME", 75*time.Minute),
+		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		SleeperUserID:       os.Getenv("SLEEPER_USER_ID"),
+		SleeperMainLeagueID: os.Getenv("SLEEPER_MAIN_LEAGUE_ID"),
+		SleeperSport:        getEnv("SLEEPER_SPORT", "nfl"),
+		SleeperBaseURL:      getEnv("SLEEPER_API_BASE_URL", "https://api.sleeper.app/v1"),
+		StartSeason:         getEnvInt("START_SEASON", 2022),
+		EndSeason:           getEnvInt("END_SEASON", 2025),
+		HTTPTimeout:         getEnvDuration("HTTP_TIMEOUT", 30*time.Second),
+		DBMaxOpenConns:      getEnvInt("DB_MAX_OPEN_CONNS", 25),
+		DBMaxIdleConns:      getEnvInt("DB_MAX_IDLE_CONNS", 25),
+		DBMaxIdleTime:       getEnvDuration("DB_MAX_IDLE_TIME", 75*time.Minute),
 	}
 
 	if cfg.DatabaseURL == "" {

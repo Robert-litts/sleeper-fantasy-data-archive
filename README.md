@@ -95,6 +95,7 @@ Then set your Sleeper user ID:
 ```env
 DATABASE_URL=postgres://sleeper:sleeper@localhost:5434/sleeper_archive?sslmode=disable
 SLEEPER_USER_ID=your_sleeper_user_id
+SLEEPER_MAIN_LEAGUE_ID=your_main_sleeper_league_id
 SLEEPER_SPORT=nfl
 START_SEASON=2022
 END_SEASON=2025
@@ -107,6 +108,10 @@ DB_MAX_IDLE_TIME=1h15m
 # ESPN_DUMP_FILE=/path/to/espn_fantasy_postgres_backup.dump
 
 ```
+
+`SLEEPER_MAIN_LEAGUE_ID` is the preferred lineage seed for the archive. The service uses it to walk `previous_league_id` backward and stamp a canonical lineage id across every season in that league family.
+
+If your Sleeper account has more than one league family, pick the current-season league id for the family you want to treat as the main archive. `go run ./cmd/sleeper-archive -mode inspect` will list every league found for `SLEEPER_USER_ID` across the configured seasons, so you can compare the league ids and choose the chain you want. Leagues that do not belong to that seed chain stay outside the canonical lineage.
 
 If you only know your Sleeper username, you can get your user ID from:
 
