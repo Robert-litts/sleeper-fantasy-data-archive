@@ -1,6 +1,8 @@
 -- name: UpsertLeague :one
 INSERT INTO leagues (
     sleeper_league_id,
+    previous_league_id,
+    canonical_league_id,
     season,
     name,
     status,
@@ -13,9 +15,11 @@ INSERT INTO leagues (
     league_settings,
     updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now()
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now()
 )
 ON CONFLICT (sleeper_league_id) DO UPDATE SET
+    previous_league_id = EXCLUDED.previous_league_id,
+    canonical_league_id = EXCLUDED.canonical_league_id,
     season = EXCLUDED.season,
     name = EXCLUDED.name,
     status = EXCLUDED.status,
@@ -27,6 +31,13 @@ ON CONFLICT (sleeper_league_id) DO UPDATE SET
     scoring_settings = EXCLUDED.scoring_settings,
     league_settings = EXCLUDED.league_settings,
     updated_at = now()
+RETURNING *;
+
+-- name: UpdateLeagueCanonicalLeagueID :one
+UPDATE leagues
+SET canonical_league_id = $2,
+    updated_at = now()
+WHERE sleeper_league_id = $1
 RETURNING *;
 
 -- name: GetLeagueBySleeperID :one

@@ -1,6 +1,8 @@
 CREATE TABLE leagues (
     id bigserial PRIMARY KEY,
     sleeper_league_id text NOT NULL UNIQUE,
+    previous_league_id text,
+    canonical_league_id text,
     season integer NOT NULL,
     name text NOT NULL DEFAULT '',
     status text NOT NULL DEFAULT '',
@@ -14,6 +16,14 @@ CREATE TABLE leagues (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_leagues_previous_league_id
+ON leagues(previous_league_id)
+WHERE previous_league_id IS NOT NULL;
+
+CREATE INDEX idx_leagues_canonical_league_id
+ON leagues(canonical_league_id)
+WHERE canonical_league_id IS NOT NULL;
 
 CREATE TABLE teams (
     id bigserial PRIMARY KEY,

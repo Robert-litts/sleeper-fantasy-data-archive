@@ -119,6 +119,10 @@ func (s *Service) ArchiveLeagues(ctx context.Context) (int, error) {
 		}
 	}
 
+	if err := s.syncLeagueLineage(ctx); err != nil {
+		return count, err
+	}
+
 	return count, nil
 }
 
@@ -171,6 +175,10 @@ func (s *Service) ArchiveTeamsAndRosters(ctx context.Context) (int, int, error) 
 				rosterEntryCount += inserted
 			}
 		}
+	}
+
+	if err := s.syncLeagueLineage(ctx); err != nil {
+		return teamCount, rosterEntryCount, err
 	}
 
 	return teamCount, rosterEntryCount, nil
@@ -245,6 +253,10 @@ func (s *Service) ArchiveMatchups(ctx context.Context) (int, error) {
 		}
 	}
 
+	if err := s.syncLeagueLineage(ctx); err != nil {
+		return count, err
+	}
+
 	return count, nil
 }
 
@@ -286,6 +298,10 @@ func (s *Service) ArchivePlayoffBrackets(ctx context.Context) (int, error) {
 			}
 			count += inserted
 		}
+	}
+
+	if err := s.syncLeagueLineage(ctx); err != nil {
+		return count, err
 	}
 
 	return count, nil
@@ -351,6 +367,10 @@ func (s *Service) ArchiveDrafts(ctx context.Context) (int, error) {
 		}
 	}
 
+	if err := s.syncLeagueLineage(ctx); err != nil {
+		return count, err
+	}
+
 	return count, nil
 }
 
@@ -404,6 +424,10 @@ func (s *Service) ArchiveWeeklyRosters(ctx context.Context) (int, error) {
 		}
 	}
 
+	if err := s.syncLeagueLineage(ctx); err != nil {
+		return count, err
+	}
+
 	return count, nil
 }
 
@@ -455,18 +479,59 @@ func upsertLeagueParams(league sleeper.League, fallbackSeason int) db.UpsertLeag
 	}
 
 	return db.UpsertLeagueParams{
-		SleeperLeagueID: league.LeagueID,
-		Season:          int32(season),
-		Name:            league.Name,
-		Status:          league.Status,
-		Sport:           valueOrDefault(league.Sport, "nfl"),
-		TotalRosters:    int32(league.TotalRosters),
-		DraftID:         nullString(league.DraftID),
-		Avatar:          nullString(league.Avatar),
-		RosterPositions: mustJSON(league.RosterPositions, []byte("[]")),
-		ScoringSettings: mustRawJSON(league.ScoringSettings, []byte("{}")),
-		LeagueSettings:  mustRawJSON(league.Settings, []byte("{}")),
+		SleeperLeagueID:   league.LeagueID,
+		PreviousLeagueID:  nullString(league.PreviousLeagueID),
+		CanonicalLeagueID: sql.NullString{},
+		Season:            int32(season),
+		Name:              league.Name,
+		Status:            league.Status,
+		Sport:             valueOrDefault(league.Sport, "nfl"),
+		TotalRosters:      int32(league.TotalRosters),
+		DraftID:           nullString(league.DraftID),
+		Avatar:            nullString(league.Avatar),
+		RosterPositions:   mustJSON(league.RosterPositions, []byte("[]")),
+		ScoringSettings:   mustRawJSON(league.ScoringSettings, []byte("{}")),
+		LeagueSettings:    mustRawJSON(league.Settings, []byte("{}")),
 	}
+}
+
+func (s *Service) syncLeagueLineage(ctx context.Context) error {
+	seedLeagueID := strings.TrimSpace(s.cfg.SleeperMainLeagueID)
+	if seedLeagueID == "" || s.queries == nil {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	currentLeagueID := seedLeagueID
+	for currentLeagueID != "" {
+		if _, ok := seen[currentLeagueID]; ok {
+			return fmt.Errorf("detected league lineage cycle at %s", currentLeagueID)
+		}
+		seen[currentLeagueID] = struct{}{}
+
+		league, err := s.queries.GetLeagueBySleeperID(ctx, currentLeagueID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil
+			}
+			return fmt.Errorf("load league %s: %w", currentLeagueID, err)
+		}
+
+		if _, err := s.queries.UpdateLeagueCanonicalLeagueID(ctx, db.UpdateLeagueCanonicalLeagueIDParams{
+			SleeperLeagueID:   currentLeagueID,
+			CanonicalLeagueID: sql.NullString{String: seedLeagueID, Valid: true},
+		}); err != nil {
+			return fmt.Errorf("update canonical league id for %s: %w", currentLeagueID, err)
+		}
+
+		if !league.PreviousLeagueID.Valid {
+			return nil
+		}
+
+		currentLeagueID = strings.TrimSpace(league.PreviousLeagueID.String)
+	}
+
+	return nil
 }
 
 func upsertPlayerParams(player sleeper.Player) db.UpsertPlayerParams {
@@ -763,7 +828,6 @@ func (s *Service) updateFinalStandingsFromBracketMatchup(ctx context.Context, le
 		FinalStanding: int32(*matchup.Placement + 1),
 	})
 }
-
 func mapUsersByID(users []sleeper.User) map[string]sleeper.User {
 	usersByID := make(map[string]sleeper.User, len(users))
 	for _, user := range users {

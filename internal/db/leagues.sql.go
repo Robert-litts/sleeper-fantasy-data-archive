@@ -12,7 +12,7 @@ import (
 )
 
 const getLeagueBySleeperID = `-- name: GetLeagueBySleeperID :one
-SELECT id, sleeper_league_id, season, name, status, sport, total_rosters, draft_id, avatar, roster_positions, scoring_settings, league_settings, created_at, updated_at FROM leagues
+SELECT id, sleeper_league_id, previous_league_id, canonical_league_id, season, name, status, sport, total_rosters, draft_id, avatar, roster_positions, scoring_settings, league_settings, created_at, updated_at FROM leagues
 WHERE sleeper_league_id = $1
 `
 
@@ -22,6 +22,8 @@ func (q *Queries) GetLeagueBySleeperID(ctx context.Context, sleeperLeagueID stri
 	err := row.Scan(
 		&i.ID,
 		&i.SleeperLeagueID,
+		&i.PreviousLeagueID,
+		&i.CanonicalLeagueID,
 		&i.Season,
 		&i.Name,
 		&i.Status,
@@ -39,7 +41,7 @@ func (q *Queries) GetLeagueBySleeperID(ctx context.Context, sleeperLeagueID stri
 }
 
 const listLeaguesBySeason = `-- name: ListLeaguesBySeason :many
-SELECT id, sleeper_league_id, season, name, status, sport, total_rosters, draft_id, avatar, roster_positions, scoring_settings, league_settings, created_at, updated_at FROM leagues
+SELECT id, sleeper_league_id, previous_league_id, canonical_league_id, season, name, status, sport, total_rosters, draft_id, avatar, roster_positions, scoring_settings, league_settings, created_at, updated_at FROM leagues
 WHERE season = $1
 ORDER BY name ASC
 `
@@ -56,6 +58,8 @@ func (q *Queries) ListLeaguesBySeason(ctx context.Context, season int32) ([]Leag
 		if err := rows.Scan(
 			&i.ID,
 			&i.SleeperLeagueID,
+			&i.PreviousLeagueID,
+			&i.CanonicalLeagueID,
 			&i.Season,
 			&i.Name,
 			&i.Status,
@@ -85,6 +89,8 @@ func (q *Queries) ListLeaguesBySeason(ctx context.Context, season int32) ([]Leag
 const upsertLeague = `-- name: UpsertLeague :one
 INSERT INTO leagues (
     sleeper_league_id,
+	previous_league_id,
+	canonical_league_id,
     season,
     name,
     status,
@@ -97,9 +103,11 @@ INSERT INTO leagues (
     league_settings,
     updated_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now()
+	$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now()
 )
 ON CONFLICT (sleeper_league_id) DO UPDATE SET
+	previous_league_id = EXCLUDED.previous_league_id,
+	canonical_league_id = EXCLUDED.canonical_league_id,
     season = EXCLUDED.season,
     name = EXCLUDED.name,
     status = EXCLUDED.status,
@@ -111,26 +119,30 @@ ON CONFLICT (sleeper_league_id) DO UPDATE SET
     scoring_settings = EXCLUDED.scoring_settings,
     league_settings = EXCLUDED.league_settings,
     updated_at = now()
-RETURNING id, sleeper_league_id, season, name, status, sport, total_rosters, draft_id, avatar, roster_positions, scoring_settings, league_settings, created_at, updated_at
+RETURNING id, sleeper_league_id, previous_league_id, canonical_league_id, season, name, status, sport, total_rosters, draft_id, avatar, roster_positions, scoring_settings, league_settings, created_at, updated_at
 `
 
 type UpsertLeagueParams struct {
-	SleeperLeagueID string          `json:"sleeper_league_id"`
-	Season          int32           `json:"season"`
-	Name            string          `json:"name"`
-	Status          string          `json:"status"`
-	Sport           string          `json:"sport"`
-	TotalRosters    int32           `json:"total_rosters"`
-	DraftID         sql.NullString  `json:"draft_id"`
-	Avatar          sql.NullString  `json:"avatar"`
-	RosterPositions json.RawMessage `json:"roster_positions"`
-	ScoringSettings json.RawMessage `json:"scoring_settings"`
-	LeagueSettings  json.RawMessage `json:"league_settings"`
+	SleeperLeagueID   string          `json:"sleeper_league_id"`
+	PreviousLeagueID  sql.NullString  `json:"previous_league_id"`
+	CanonicalLeagueID sql.NullString  `json:"canonical_league_id"`
+	Season            int32           `json:"season"`
+	Name              string          `json:"name"`
+	Status            string          `json:"status"`
+	Sport             string          `json:"sport"`
+	TotalRosters      int32           `json:"total_rosters"`
+	DraftID           sql.NullString  `json:"draft_id"`
+	Avatar            sql.NullString  `json:"avatar"`
+	RosterPositions   json.RawMessage `json:"roster_positions"`
+	ScoringSettings   json.RawMessage `json:"scoring_settings"`
+	LeagueSettings    json.RawMessage `json:"league_settings"`
 }
 
 func (q *Queries) UpsertLeague(ctx context.Context, arg UpsertLeagueParams) (League, error) {
 	row := q.db.QueryRowContext(ctx, upsertLeague,
 		arg.SleeperLeagueID,
+		arg.PreviousLeagueID,
+		arg.CanonicalLeagueID,
 		arg.Season,
 		arg.Name,
 		arg.Status,
@@ -146,6 +158,48 @@ func (q *Queries) UpsertLeague(ctx context.Context, arg UpsertLeagueParams) (Lea
 	err := row.Scan(
 		&i.ID,
 		&i.SleeperLeagueID,
+		&i.PreviousLeagueID,
+		&i.CanonicalLeagueID,
+		&i.Season,
+		&i.Name,
+		&i.Status,
+		&i.Sport,
+		&i.TotalRosters,
+		&i.DraftID,
+		&i.Avatar,
+		&i.RosterPositions,
+		&i.ScoringSettings,
+		&i.LeagueSettings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateLeagueCanonicalLeagueID = `-- name: UpdateLeagueCanonicalLeagueID :one
+UPDATE leagues
+SET canonical_league_id = $2,
+    updated_at = now()
+WHERE sleeper_league_id = $1
+RETURNING id, sleeper_league_id, previous_league_id, canonical_league_id, season, name, status, sport, total_rosters, draft_id, avatar, roster_positions, scoring_settings, league_settings, created_at, updated_at
+`
+
+type UpdateLeagueCanonicalLeagueIDParams struct {
+	SleeperLeagueID   string         `json:"sleeper_league_id"`
+	CanonicalLeagueID sql.NullString `json:"canonical_league_id"`
+}
+
+func (q *Queries) UpdateLeagueCanonicalLeagueID(ctx context.Context, arg UpdateLeagueCanonicalLeagueIDParams) (League, error) {
+	row := q.db.QueryRowContext(ctx, updateLeagueCanonicalLeagueID,
+		arg.SleeperLeagueID,
+		arg.CanonicalLeagueID,
+	)
+	var i League
+	err := row.Scan(
+		&i.ID,
+		&i.SleeperLeagueID,
+		&i.PreviousLeagueID,
+		&i.CanonicalLeagueID,
 		&i.Season,
 		&i.Name,
 		&i.Status,

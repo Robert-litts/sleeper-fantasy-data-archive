@@ -26,20 +26,22 @@ type Draft struct {
 }
 
 type League struct {
-	ID              int64           `json:"id"`
-	SleeperLeagueID string          `json:"sleeper_league_id"`
-	Season          int32           `json:"season"`
-	Name            string          `json:"name"`
-	Status          string          `json:"status"`
-	Sport           string          `json:"sport"`
-	TotalRosters    int32           `json:"total_rosters"`
-	DraftID         sql.NullString  `json:"draft_id"`
-	Avatar          sql.NullString  `json:"avatar"`
-	RosterPositions json.RawMessage `json:"roster_positions"`
-	ScoringSettings json.RawMessage `json:"scoring_settings"`
-	LeagueSettings  json.RawMessage `json:"league_settings"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	ID                int64           `json:"id"`
+	SleeperLeagueID   string          `json:"sleeper_league_id"`
+	PreviousLeagueID  sql.NullString  `json:"previous_league_id"`
+	CanonicalLeagueID sql.NullString  `json:"canonical_league_id"`
+	Season            int32           `json:"season"`
+	Name              string          `json:"name"`
+	Status            string          `json:"status"`
+	Sport             string          `json:"sport"`
+	TotalRosters      int32           `json:"total_rosters"`
+	DraftID           sql.NullString  `json:"draft_id"`
+	Avatar            sql.NullString  `json:"avatar"`
+	RosterPositions   json.RawMessage `json:"roster_positions"`
+	ScoringSettings   json.RawMessage `json:"scoring_settings"`
+	LeagueSettings    json.RawMessage `json:"league_settings"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
 }
 
 type Matchup struct {
