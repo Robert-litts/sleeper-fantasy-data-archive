@@ -1,16 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -f ".env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source ".env"
-  set +a
-fi
+env_value() {
+  local key="$1"
+  local line=""
 
-DUMP_FILE="${1:-${ESPN_DUMP_FILE:-}}"
+  if [[ -f ".env" ]]; then
+    line="$(grep -E "^${key}=" ".env" | tail -n 1 || true)"
+  fi
+
+  if [[ -z "$line" ]]; then
+    return 0
+  fi
+
+  local value="${line#*=}"
+  value="${value%$'\r'}"
+  value="${value#\"}"
+  value="${value%\"}"
+  value="${value#\'}"
+  value="${value%\'}"
+  printf "%s" "$value"
+}
+
+DUMP_FILE="${1:-${ESPN_DUMP_FILE:-$(env_value ESPN_DUMP_FILE)}}"
+DB_NAME="${DB_NAME:-$(env_value DB_NAME)}"
 DB_NAME="${DB_NAME:-fantasy_espn_clone}"
+DB_USER="${DB_USER:-$(env_value DB_USER)}"
 DB_USER="${DB_USER:-sleeper}"
+CONTAINER_NAME="${CONTAINER_NAME:-$(env_value CONTAINER_NAME)}"
 CONTAINER_NAME="${CONTAINER_NAME:-sleeper-postgres}"
 
 if [[ -z "$DUMP_FILE" ]]; then

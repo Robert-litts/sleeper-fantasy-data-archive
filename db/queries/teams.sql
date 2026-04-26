@@ -40,9 +40,19 @@ ON CONFLICT (league_id, roster_id) DO UPDATE SET
     total_moves = EXCLUDED.total_moves,
     streak_type = EXCLUDED.streak_type,
     streak_length = EXCLUDED.streak_length,
-    standing = EXCLUDED.standing,
-    final_standing = EXCLUDED.final_standing
+    standing = EXCLUDED.standing
 RETURNING *;
+
+-- name: UpdateTeamFinalStanding :exec
+UPDATE teams
+SET final_standing = $3
+WHERE league_id = $1
+  AND roster_id = $2;
+
+-- name: ResetLeagueFinalStandings :exec
+UPDATE teams
+SET final_standing = standing
+WHERE league_id = $1;
 
 -- name: ListTeamsByLeague :many
 SELECT * FROM teams

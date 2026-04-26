@@ -61,6 +61,35 @@ func (q *Queries) ListTeamsByLeague(ctx context.Context, leagueID int64) ([]Team
 	return items, nil
 }
 
+const resetLeagueFinalStandings = `-- name: ResetLeagueFinalStandings :exec
+UPDATE teams
+SET final_standing = standing
+WHERE league_id = $1
+`
+
+func (q *Queries) ResetLeagueFinalStandings(ctx context.Context, leagueID int64) error {
+	_, err := q.db.ExecContext(ctx, resetLeagueFinalStandings, leagueID)
+	return err
+}
+
+const updateTeamFinalStanding = `-- name: UpdateTeamFinalStanding :exec
+UPDATE teams
+SET final_standing = $3
+WHERE league_id = $1
+  AND roster_id = $2
+`
+
+type UpdateTeamFinalStandingParams struct {
+	LeagueID      int64 `json:"league_id"`
+	RosterID      int32 `json:"roster_id"`
+	FinalStanding int32 `json:"final_standing"`
+}
+
+func (q *Queries) UpdateTeamFinalStanding(ctx context.Context, arg UpdateTeamFinalStandingParams) error {
+	_, err := q.db.ExecContext(ctx, updateTeamFinalStanding, arg.LeagueID, arg.RosterID, arg.FinalStanding)
+	return err
+}
+
 const upsertTeam = `-- name: UpsertTeam :one
 INSERT INTO teams (
     league_id,
@@ -103,8 +132,7 @@ ON CONFLICT (league_id, roster_id) DO UPDATE SET
     total_moves = EXCLUDED.total_moves,
     streak_type = EXCLUDED.streak_type,
     streak_length = EXCLUDED.streak_length,
-    standing = EXCLUDED.standing,
-    final_standing = EXCLUDED.final_standing
+    standing = EXCLUDED.standing
 RETURNING id, league_id, roster_id, owner_id, user_id, display_name, username, team_name, avatar, wins, losses, ties, points_for, points_against, waiver_position, waiver_budget_used, total_moves, streak_type, streak_length, standing, final_standing
 `
 

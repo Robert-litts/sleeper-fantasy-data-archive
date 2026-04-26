@@ -19,6 +19,7 @@ The long-term goal is for my fantasy football web app to read from both:
 - League archive
 - Team and current-roster archive
 - Weekly matchup archive
+- Playoff bracket archive
 - Optional restore script for a local ESPN clone database
 - Draft archive
 - Historical lineup/roster snapshots by week
@@ -144,7 +145,8 @@ Available modes:
 | `leagues` | Fetches leagues for each configured season and upserts league records. |
 | `teams` | Fetches league users and rosters, upserts team records, and stores current roster entries at `week = 0`. |
 | `matchups` | Fetches weekly matchup entries until Sleeper returns the first empty week, stores scores, starters, players, and paired opponent roster IDs. |
-| `backfill-basic` | Runs players, leagues, teams, current rosters, and matchup archiving in sequence. |
+| `brackets` | Fetches winners and losers playoff brackets, stores bracket progression metadata, and updates `teams.final_standing` from completed winners-bracket placement games. |
+| `backfill-basic` | Runs players, leagues, teams, current rosters, matchups, and playoff bracket archiving in sequence. |
 | `state` | Fetches Sleeper NFL state metadata. Useful for API/debug checks. |
 
 Example:
@@ -207,7 +209,38 @@ ESPN_DATABASE_URL=postgres://sleeper:sleeper@localhost:5434/fantasy_espn_clone?s
 - `players.sleeper_id` is the authoritative Sleeper player ID.
 - `players.espn_id` is an optional indexed cross-reference.
 - The table names mirror the ESPN archive where practical: `leagues`, `teams`, `players`, `drafts`, `matchups`, and `rosters`.
+- `teams.standing` is regular-season standing.
+- `teams.final_standing` starts as regular-season standing, then `brackets` updates it when Sleeper exposes completed winners-bracket placement games.
+- `playoff_bracket_matchups` stores Sleeper winners and losers bracket metadata separately from weekly matchup scores. Losers-bracket placement values are archived but not used as overall league final standings.
+- In `playoff_bracket_matchups`, `slot1_*` and `slot2_*` represent the two bracket positions in a playoff matchup. A slot can point directly to a roster with `slot1_roster_id`, or it can point to the winner/loser of an earlier bracket matchup with `slot1_source_matchup_id` and `slot1_source_result`.
 - Current roster entries are stored with `week = 0` until weekly snapshots are implemented.
+
+### Playoff Bracket Example
+
+Sleeper does not expose a single final standings endpoint. Instead, it exposes weekly scores through `matchups` and playoff bracket structure through `winners_bracket` and `losers_bracket`.
+
+The `playoff_bracket_matchups` table preserves that bracket structure. Each row is one node in the bracket tree.
+
+For a simple four-team winners bracket, the rows might look like this:
+
+| bracket_type | round_num | matchup_id | placement | slot1_roster_id | slot2_roster_id | slot1_source_matchup_id | slot1_source_result | slot2_source_matchup_id | slot2_source_result | winner_roster_id | loser_roster_id |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- | ---: | ---: |
+| `WINNERS_BRACKET` | 1 | 1 |  | 3 | 6 |  |  |  |  | 3 | 6 |
+| `WINNERS_BRACKET` | 1 | 2 |  | 4 | 5 |  |  |  |  | 5 | 4 |
+| `WINNERS_BRACKET` | 2 | 3 | 1 | 3 | 5 | 1 | `WINNER` | 2 | `WINNER` | 5 | 3 |
+| `WINNERS_BRACKET` | 2 | 4 | 3 | 6 | 4 | 1 | `LOSER` | 2 | `LOSER` | 4 | 6 |
+
+Read the rows like this:
+
+- `matchup_id = 1` is a first-round game between roster `3` and roster `6`; roster `3` won.
+- `matchup_id = 2` is a first-round game between roster `4` and roster `5`; roster `5` won.
+- `matchup_id = 3` is the championship game because `placement = 1`.
+- `matchup_id = 3` has `slot1_source_matchup_id = 1` and `slot1_source_result = WINNER`, so slot 1 came from the winner of matchup `1`, which was roster `3`.
+- `matchup_id = 3` has `slot2_source_matchup_id = 2` and `slot2_source_result = WINNER`, so slot 2 came from the winner of matchup `2`, which was roster `5`.
+- Since roster `5` won `matchup_id = 3`, roster `5` finished `1st` and roster `3` finished `2nd`.
+- `matchup_id = 4` has `placement = 3`, so it is the third-place game. Roster `4` won and finished `3rd`; roster `6` finished `4th`.
+
+The archive uses completed `WINNERS_BRACKET` placement rows to update `teams.final_standing`. The original bracket rows remain available so the web app can later render playoff paths, byes, championship games, and third-place games without guessing from scores alone.
 
 ## Development
 

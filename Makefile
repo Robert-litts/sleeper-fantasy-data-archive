@@ -19,11 +19,11 @@ run:
 
 .PHONY: test
 test:
-	go test ./...
+	go test ./cmd/... ./internal/...
 
 .PHONY: fmt
 fmt:
-	go fmt ./...
+	go fmt ./cmd/... ./internal/...
 
 .PHONY: sqlc/generate
 sqlc/generate:

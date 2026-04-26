@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "inspect", "Mode to run: inspect, players, leagues, teams, matchups, backfill-basic, state")
+	mode := flag.String("mode", "inspect", "Mode to run: inspect, players, leagues, teams, matchups, brackets, backfill-basic, state")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -71,12 +71,18 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Printf("archived %d matchup entries\n", count)
-	case "backfill-basic":
-		playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, err := svc.ArchiveBasic(ctx)
+	case "brackets":
+		count, err := svc.ArchivePlayoffBrackets(ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("archived %d players, %d leagues, %d teams, %d roster entries, and %d matchup entries\n", playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount)
+		fmt.Printf("archived %d playoff bracket matchups\n", count)
+	case "backfill-basic":
+		playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, bracketCount, err := svc.ArchiveBasic(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("archived %d players, %d leagues, %d teams, %d roster entries, %d matchup entries, and %d playoff bracket matchups\n", playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, bracketCount)
 	case "state":
 		state, err := client.GetState(ctx, cfg.SleeperSport)
 		if err != nil {

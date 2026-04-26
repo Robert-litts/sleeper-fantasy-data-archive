@@ -241,29 +241,79 @@ func (s *Service) ArchiveMatchups(ctx context.Context) (int, error) {
 	return count, nil
 }
 
-func (s *Service) ArchiveBasic(ctx context.Context) (int, int, int, int, int, error) {
+func (s *Service) ArchivePlayoffBrackets(ctx context.Context) (int, error) {
+	if s.queries == nil {
+		return 0, fmt.Errorf("database queries are not configured")
+	}
+
+	plans, err := s.BuildBackfillPlan(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, plan := range plans {
+		for _, league := range plan.Leagues {
+			if league.LeagueID == "" {
+				continue
+			}
+
+			dbLeague, err := s.queries.UpsertLeague(ctx, upsertLeagueParams(league, plan.Season))
+			if err != nil {
+				return count, fmt.Errorf("upsert league %s: %w", league.LeagueID, err)
+			}
+
+			if err := s.queries.ResetLeagueFinalStandings(ctx, dbLeague.ID); err != nil {
+				return count, fmt.Errorf("reset final standings league %s: %w", league.LeagueID, err)
+			}
+
+			inserted, err := s.archiveBracket(ctx, dbLeague.ID, league.LeagueID, "WINNERS_BRACKET", s.client.GetLeagueWinnersBracket)
+			if err != nil {
+				return count, err
+			}
+			count += inserted
+
+			inserted, err = s.archiveBracket(ctx, dbLeague.ID, league.LeagueID, "LOSERS_BRACKET", s.client.GetLeagueLosersBracket)
+			if err != nil {
+				return count, err
+			}
+			count += inserted
+		}
+	}
+
+	return count, nil
+}
+
+func (s *Service) ArchiveBasic(ctx context.Context) (int, int, int, int, int, int, error) {
 	playerCount, err := s.ArchivePlayers(ctx)
 	if err != nil {
-		return 0, 0, 0, 0, 0, err
+		return 0, 0, 0, 0, 0, 0, err
 	}
 
 	leagueCount, err := s.ArchiveLeagues(ctx)
 	if err != nil {
-		return playerCount, 0, 0, 0, 0, err
+		return playerCount, 0, 0, 0, 0, 0, err
 	}
 
 	teamCount, rosterEntryCount, err := s.ArchiveTeamsAndRosters(ctx)
 	if err != nil {
-		return playerCount, leagueCount, teamCount, rosterEntryCount, 0, err
+		return playerCount, leagueCount, teamCount, rosterEntryCount, 0, 0, err
 	}
 
 	matchupCount, err := s.ArchiveMatchups(ctx)
 	if err != nil {
-		return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, err
+		return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, 0, err
 	}
 
-	return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, nil
+	bracketCount, err := s.ArchivePlayoffBrackets(ctx)
+	if err != nil {
+		return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, bracketCount, err
+	}
+
+	return playerCount, leagueCount, teamCount, rosterEntryCount, matchupCount, bracketCount, nil
 }
+
+type bracketFetcher func(context.Context, string) ([]sleeper.BracketMatchup, error)
 
 func upsertLeagueParams(league sleeper.League, fallbackSeason int) db.UpsertLeagueParams {
 	season := fallbackSeason
@@ -386,6 +436,80 @@ func (s *Service) archiveRosterEntries(ctx context.Context, leagueID int64, rost
 	return count, nil
 }
 
+func (s *Service) archiveBracket(ctx context.Context, dbLeagueID int64, sleeperLeagueID, bracketType string, fetch bracketFetcher) (int, error) {
+	bracketMatchups, err := fetch(ctx, sleeperLeagueID)
+	if err != nil {
+		return 0, fmt.Errorf("fetch %s league %s: %w", strings.ToLower(bracketType), sleeperLeagueID, err)
+	}
+
+	count := 0
+	for _, matchup := range bracketMatchups {
+		if matchup.MatchupID == 0 {
+			continue
+		}
+
+		if _, err := s.queries.UpsertPlayoffBracketMatchup(ctx, upsertPlayoffBracketMatchupParams(dbLeagueID, bracketType, matchup)); err != nil {
+			return count, fmt.Errorf("upsert %s league %s matchup %d: %w", strings.ToLower(bracketType), sleeperLeagueID, matchup.MatchupID, err)
+		}
+
+		if bracketType == "WINNERS_BRACKET" && isCompletedPlacementMatchup(matchup) {
+			if err := s.updateFinalStandingsFromBracketMatchup(ctx, dbLeagueID, matchup); err != nil {
+				return count, fmt.Errorf("update final standings league %s matchup %d: %w", sleeperLeagueID, matchup.MatchupID, err)
+			}
+		}
+
+		count++
+	}
+
+	return count, nil
+}
+
+func isCompletedPlacementMatchup(matchup sleeper.BracketMatchup) bool {
+	return matchup.Placement != nil && matchup.WinnerRosterID != nil && matchup.LoserRosterID != nil
+}
+
+func upsertPlayoffBracketMatchupParams(leagueID int64, bracketType string, matchup sleeper.BracketMatchup) db.UpsertPlayoffBracketMatchupParams {
+	t1Source := mergeBracketSource(matchup.Team1.Source, matchup.Team1From)
+	t2Source := mergeBracketSource(matchup.Team2.Source, matchup.Team2From)
+
+	return db.UpsertPlayoffBracketMatchupParams{
+		LeagueID:             leagueID,
+		BracketType:          bracketType,
+		RoundNum:             int32(matchup.Round),
+		MatchupID:            int32(matchup.MatchupID),
+		Placement:            nullInt(matchup.Placement),
+		Slot1RosterID:        nullInt(matchup.Team1.RosterID),
+		Slot2RosterID:        nullInt(matchup.Team2.RosterID),
+		Slot1SourceMatchupID: nullInt(bracketSourceMatchupID(t1Source)),
+		Slot1SourceResult:    nullString(bracketSourceResult(t1Source)),
+		Slot2SourceMatchupID: nullInt(bracketSourceMatchupID(t2Source)),
+		Slot2SourceResult:    nullString(bracketSourceResult(t2Source)),
+		WinnerRosterID:       nullInt(matchup.WinnerRosterID),
+		LoserRosterID:        nullInt(matchup.LoserRosterID),
+		RawPayload:           mustJSON(matchup, []byte("{}")),
+	}
+}
+
+func (s *Service) updateFinalStandingsFromBracketMatchup(ctx context.Context, leagueID int64, matchup sleeper.BracketMatchup) error {
+	if !isCompletedPlacementMatchup(matchup) {
+		return nil
+	}
+
+	if err := s.queries.UpdateTeamFinalStanding(ctx, db.UpdateTeamFinalStandingParams{
+		LeagueID:      leagueID,
+		RosterID:      int32(*matchup.WinnerRosterID),
+		FinalStanding: int32(*matchup.Placement),
+	}); err != nil {
+		return err
+	}
+
+	return s.queries.UpdateTeamFinalStanding(ctx, db.UpdateTeamFinalStandingParams{
+		LeagueID:      leagueID,
+		RosterID:      int32(*matchup.LoserRosterID),
+		FinalStanding: int32(*matchup.Placement + 1),
+	})
+}
+
 func mapUsersByID(users []sleeper.User) map[string]sleeper.User {
 	usersByID := make(map[string]sleeper.User, len(users))
 	for _, user := range users {
@@ -465,6 +589,30 @@ func normalizedMatchupID(matchup sleeper.Matchup) int {
 		return matchup.MatchupID.Value
 	}
 	return -matchup.RosterID
+}
+
+func mergeBracketSource(primary, fallback sleeper.BracketSource) sleeper.BracketSource {
+	if primary.WinnerOf != nil || primary.LoserOf != nil {
+		return primary
+	}
+	return fallback
+}
+
+func bracketSourceMatchupID(source sleeper.BracketSource) *int {
+	if source.WinnerOf != nil {
+		return source.WinnerOf
+	}
+	return source.LoserOf
+}
+
+func bracketSourceResult(source sleeper.BracketSource) string {
+	if source.WinnerOf != nil {
+		return "WINNER"
+	}
+	if source.LoserOf != nil {
+		return "LOSER"
+	}
+	return ""
 }
 
 func nullString(value string) sql.NullString {

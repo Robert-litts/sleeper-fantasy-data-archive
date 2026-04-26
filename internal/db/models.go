@@ -71,6 +71,24 @@ type Player struct {
 	Age              sql.NullInt32   `json:"age"`
 }
 
+type PlayoffBracketMatchup struct {
+	ID                   int64           `json:"id"`
+	LeagueID             int64           `json:"league_id"`
+	BracketType          string          `json:"bracket_type"`
+	RoundNum             int32           `json:"round_num"`
+	MatchupID            int32           `json:"matchup_id"`
+	Placement            sql.NullInt32   `json:"placement"`
+	Slot1RosterID        sql.NullInt32   `json:"slot1_roster_id"`
+	Slot2RosterID        sql.NullInt32   `json:"slot2_roster_id"`
+	Slot1SourceMatchupID sql.NullInt32   `json:"slot1_source_matchup_id"`
+	Slot1SourceResult    sql.NullString  `json:"slot1_source_result"`
+	Slot2SourceMatchupID sql.NullInt32   `json:"slot2_source_matchup_id"`
+	Slot2SourceResult    sql.NullString  `json:"slot2_source_result"`
+	WinnerRosterID       sql.NullInt32   `json:"winner_roster_id"`
+	LoserRosterID        sql.NullInt32   `json:"loser_roster_id"`
+	RawPayload           json.RawMessage `json:"raw_payload"`
+}
+
 type Roster struct {
 	ID         int64  `json:"id"`
 	LeagueID   int64  `json:"league_id"`

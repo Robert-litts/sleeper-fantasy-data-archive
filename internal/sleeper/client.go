@@ -83,6 +83,23 @@ func (c *Client) GetLeagueMatchups(ctx context.Context, leagueID string, week in
 	return matchups, nil
 }
 
+func (c *Client) GetLeagueWinnersBracket(ctx context.Context, leagueID string) ([]BracketMatchup, error) {
+	return c.getLeagueBracket(ctx, leagueID, "winners_bracket")
+}
+
+func (c *Client) GetLeagueLosersBracket(ctx context.Context, leagueID string) ([]BracketMatchup, error) {
+	return c.getLeagueBracket(ctx, leagueID, "losers_bracket")
+}
+
+func (c *Client) getLeagueBracket(ctx context.Context, leagueID, bracket string) ([]BracketMatchup, error) {
+	var matchups []BracketMatchup
+	path := fmt.Sprintf("/league/%s/%s", url.PathEscape(leagueID), bracket)
+	if err := c.getJSON(ctx, path, &matchups); err != nil {
+		return nil, err
+	}
+	return matchups, nil
+}
+
 func (c *Client) GetPlayers(ctx context.Context, sport string) (map[string]Player, error) {
 	players := make(map[string]Player)
 	if err := c.getJSON(ctx, "/players/"+url.PathEscape(sport), &players); err != nil {

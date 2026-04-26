@@ -169,6 +169,64 @@ type DraftPick struct {
 	DraftID   string            `json:"draft_id"`
 }
 
+type BracketSource struct {
+	WinnerOf *int `json:"w"`
+	LoserOf  *int `json:"l"`
+}
+
+type BracketTeamRef struct {
+	RosterID *int
+	Source   BracketSource
+}
+
+func (r *BracketTeamRef) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(data, []byte("null")) {
+		r.RosterID = nil
+		r.Source = BracketSource{}
+		return nil
+	}
+
+	var rosterID int
+	if err := json.Unmarshal(data, &rosterID); err == nil {
+		r.RosterID = &rosterID
+		r.Source = BracketSource{}
+		return nil
+	}
+
+	var source BracketSource
+	if err := json.Unmarshal(data, &source); err == nil {
+		r.RosterID = nil
+		r.Source = source
+		return nil
+	}
+
+	r.RosterID = nil
+	r.Source = BracketSource{}
+	return nil
+}
+
+func (r BracketTeamRef) MarshalJSON() ([]byte, error) {
+	if r.RosterID != nil {
+		return json.Marshal(*r.RosterID)
+	}
+	if r.Source.WinnerOf != nil || r.Source.LoserOf != nil {
+		return json.Marshal(r.Source)
+	}
+	return []byte("null"), nil
+}
+
+type BracketMatchup struct {
+	Round          int            `json:"r"`
+	MatchupID      int            `json:"m"`
+	Team1          BracketTeamRef `json:"t1"`
+	Team2          BracketTeamRef `json:"t2"`
+	Team1From      BracketSource  `json:"t1_from"`
+	Team2From      BracketSource  `json:"t2_from"`
+	WinnerRosterID *int           `json:"w"`
+	LoserRosterID  *int           `json:"l"`
+	Placement      *int           `json:"p"`
+}
+
 type Matchup struct {
 	Starters     []string    `json:"starters"`
 	RosterID     int         `json:"roster_id"`
